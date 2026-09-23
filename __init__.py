@@ -1,6 +1,11 @@
-"""Hermes plugin: semantic icons for auto-titled Telegram DM topics.
+"""Hermes plugin: semantic icons and sidebar-length names for auto-titled Telegram DM topics.
 
-Two ways in, picked at load time:
+One auxiliary call per topic: the core titler's request is widened (``merged_titler``) so the same
+reply carries ``title``, ``name`` and ``emoji``; the rename hook then answers from a stash without
+a second model round-trip. The stash misses only when the icon catalog was not loaded yet (first
+topic after a restart) — that topic takes the two-call path and warms the catalog.
+
+Two ways into the rename, picked at load time:
 
 1. **Hook** — a Hermes core with the ``pre_topic_rename`` gateway hook (NousResearch/hermes-agent
    PR #119907) calls us with the title and a catalog fetcher; our answer rides the same
@@ -26,7 +31,8 @@ from typing import Any, Optional
 
 # Plugin directories are loaded as loose modules, not packages: import the sibling by path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from picker import RecentIcons, TopicIconCatalog, choose_topic_decor  # noqa: E402
+import merged_titler  # noqa: E402
+from picker import RecentIcons, TopicIconCatalog, choose_topic_decor, rank_candidates  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +42,32 @@ _SHIM_MARK = "_topic_icons_shim"
 
 _catalog = TopicIconCatalog()
 _recent = RecentIcons()
+_stash = merged_titler.DecorStash()
+_last_chat_for_titler = {"key": ""}
 
 
 async def pick_decor(chat_id: str, title: str, fetch_icon_catalog: Any) -> tuple:
-    """``(custom_emoji_id, short_name)`` for ``title`` — either None; shared by the hook and the shim."""
+    """``(custom_emoji_id, short_name)`` for ``title`` — either None; shared by the hook and the shim.
+
+    Stash first (filled by the merged titler call), model second (catalog not loaded yet, or the
+    titler ran without the merge). Either way the recency ring and the catalog lookup are the same.
+    """
     if fetch_icon_catalog is None or not await _catalog.ensure_loaded(fetch_icon_catalog):
         return None, None
-    emoji, name = await asyncio.to_thread(choose_topic_decor, title, _catalog, recent=_recent.get(str(chat_id)))
+    _last_chat_for_titler["key"] = str(chat_id)
+    stashed = _stash.pop(title)
+    if stashed is not None:
+        candidates, name = stashed
+        emoji = rank_candidates(candidates, _catalog, _recent.get(str(chat_id)))
+        how = "merged"
+    else:
+        emoji, name = await asyncio.to_thread(choose_topic_decor, title, _catalog, recent=_recent.get(str(chat_id)))
+        how = "second call"
     if emoji:
         _recent.push(str(chat_id), emoji)
     if name and name.casefold() == title.casefold():
         name = None
-    logger.info("Topic decor %s '%s' for '%s'", emoji or "∅", name or title, title)
+    logger.info("Topic decor %s '%s' for '%s' (%s)", emoji or "∅", name or title, title, how)
     return (_catalog.lookup(emoji) if emoji else None), name
 
 
@@ -141,6 +161,9 @@ def core_has_hook() -> bool:
 
 
 def register(ctx) -> None:
+    # Recent icons for the merged prompt: the titler call carries no chat id, so we use the ring of
+    # the chat that last renamed a topic — in a single-user gateway that is the right one.
+    merged_titler.install(_catalog, _stash, lambda: _recent.get(_last_chat_for_titler["key"]))
     if core_has_hook():
         ctx.register_hook(HOOK, pre_topic_rename)
         return

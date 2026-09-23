@@ -7,11 +7,24 @@ catalog icon that best matches the generated title — 🛒 for a shopping assis
 auth.log investigation, ⛅ for Cloudflare DNS — in the same `editForumTopic` call the gateway
 already makes. Names stay clean; only the bubble changes.
 
-## Short names
+## One call per topic
 
-Hermes titles a session in 3-7 words for list views; a collapsed Telegram sidebar shows ~12 characters with an ellipsis in the middle, so "Настроить помощника-покупателя для Авито" reads as "Настроить пом…вито". The same auxiliary call that picks the icon also returns a 2-4 word name (max 28 chars, key noun first, verbs and filler dropped, same language, technical terms exact) which becomes the **topic name only** — the session title Hermes stores (`hermes sessions`, TUI) is untouched.
+Hermes already makes one cheap auxiliary call per new session — the titler asks the `title_generation` model for `{"title": ...}` from your opening message. This plugin rides that call instead of adding a second one: at load it wraps the titler's `call_llm`, appends the icon catalog and the short-name rules to the system prompt and widens the JSON schema to `{"title", "name", "emoji"}`. The core keeps reading `title` from the same reply; the other two fields wait in a small stash until the gateway renames the topic a moment later. No extra model round-trip, no change to the core.
 
-On 40 real titles: 40/40 shortened, average 20 characters, e.g. `Оценить интеграцию computer-use-linux MCP` → `MCP computer-use`, `Hermes gateway degraded after restart` → `Gateway degraded`, `Анализ auth.log: топ IP по неудачным SSH-входам` → `auth.log SSH-атаки`.
+- **Short name** — 2-4 words, max 28 chars, key noun first, verbs and filler dropped, same language, technical terms exact. Becomes the **topic name only**; the session title Hermes stores (`hermes sessions`, TUI) is untouched. A collapsed Telegram sidebar shows ~12 characters, so "Настроить помощника-покупателя для Авито" reads as "Настроить пом…вито" without it and "Авито-помощник" with it.
+- **Icon** — three ranked catalog candidates; specific beats generic, unseen beats recently used in that chat.
+- **Fallback** — the first topic after a gateway restart (catalog not loaded yet), or a core whose titler shape changed, takes a second call for the decor; the title is never at risk.
+
+Point `auxiliary.title_generation` at a fast model (`hermes config set auxiliary.title_generation.provider <p>` / `.model <m>`); by default it is your main model, which is overkill for seven words.
+
+Live sample (gpt-6-sol, one call each, 2.5-4.6 s):
+
+| opening message | title | name | icon |
+|---|---|---|---|
+| бэкап state.db в S3 через restic падает по таймеру | Починить сбой бэкапа state.db в S3 | Бэкап state.db в S3 | 📁 |
+| помощник-покупатель для Авито, мониторить объявления | Настроить помощника-покупателя для Авито | Авито-помощник | 🛒 |
+| auth.log, кто ломится по SSH, забань топ-10 через ufw | Найти топ-10 IP в auth.log и забанить через ufw | IP SSH-атак | 🪖 |
+| ценообразование на подписку, три тарифа, unit-экономика | Рассчитать unit-экономику трёх тарифов | Unit-экономика тарифов | 💰 |
 
 ## Requirements
 
