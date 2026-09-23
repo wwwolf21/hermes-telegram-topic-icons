@@ -1,0 +1,7 @@
+name: hermes_telegram_topic_icons
+version: 0.1.0
+description: "Telegram: pick a meaningful forum-topic icon for every auto-titled DM topic (semantic, non-repeating)."
+author: Nikita Wolf
+kind: standalone
+hooks:
+  - pre_topic_rename
