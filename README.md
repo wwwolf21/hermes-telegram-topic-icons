@@ -18,6 +18,7 @@ already makes. Names stay clean; only the bubble changes.
 
 ```bash
 git clone https://github.com/wwwolf21/hermes-telegram-topic-icons ~/.hermes/plugins/hermes_telegram_topic_icons
+hermes plugins enable hermes_telegram_topic_icons
 hermes gateway restart
 ```
 
