@@ -39,7 +39,7 @@ ICON_TIMEOUT_SECONDS = 20.0
 NAME_MAX_CHARS = 28
 NAME_MAX_WORDS = 4
 # How many recent picks the runner remembers per chat to steer the model away from repeats.
-RECENT_WINDOW = 12
+RECENT_WINDOW = 30
 # Variation selectors / ZWJ sequences: the model echoes "⚡" for the catalog's "⚡️"; normalise both sides.
 _EMOJI_NOISE_RE = re.compile("[\ufe0e\ufe0f\u200d]")
 
@@ -54,40 +54,40 @@ ICON_MEANINGS: Dict[str, str] = {
     "🎙": "voice, audio, speech, podcast", "🔝": "top, best, ranking", "🗣": "conversation, meeting, interview",
     "🆒": "cool, fun, nice-to-have", "❗": "important, alert", "📝": "notes, writing, documentation",
     "📆": "schedule, calendar, deadline, cron", "📁": "files, storage, backup, archive", "🔎": "search, investigate, logs, analysis",
-    "📣": "announcement, marketing, promotion", "🔥": "urgent, hot, incident, outage", "❤": "favourite, love, thanks",
+    "📣": "announcement, marketing, promotion", "🔥": "urgent, hot, incident, outage", "❤": "favourite, love, thanks, user care, retention",
     "❓": "question, unclear", "📈": "growth, metrics, priorities, strategy", "📉": "decline, degradation, regression",
     "💎": "premium, quality, valuable", "💰": "money, pricing, budget", "💸": "spending, costs, expenses",
     "🪙": "crypto, tokens, coins", "💱": "exchange, conversion, currency", "⁉": "confusion, bug report",
-    "🎮": "gaming, controller, play", "💻": "coding, computer, generic tech", "📱": "mobile, app, phone, Telegram client",
-    "🚗": "car, driving, transport", "🏠": "home, house, smart home", "💘": "dating, romance",
+    "🎮": "gaming, controller, play, remote control, KVM, input devices", "💻": "coding, computer, generic tech", "📱": "mobile, app, phone, Telegram client",
+    "🚗": "car, driving, transport, delivery, logistics, drivers (software)", "🏠": "home, house, smart home, home server, self-hosted, local network", "💘": "dating, romance, matching, recommendations, pairing devices",
     "🎉": "celebration, launch, release", "‼": "critical, double alert", "🏆": "achievement, win, award",
-    "🏁": "finish, completion, done, milestone", "🎬": "video, film, recording", "🎵": "music, song",
-    "🔞": "adult, restricted", "📚": "learning, books, reference, study", "👑": "admin, owner, leadership",
-    "⚽": "football, sport", "🏀": "basketball, sport", "📺": "TV, streaming, display, monitor",
-    "👀": "review, watch, monitoring, observe", "🫦": "flirt", "🍓": "fruit, food",
-    "💄": "beauty, cosmetics", "👠": "fashion, shoes", "✈": "travel, flight, migration, moving",
-    "🧳": "trip, packing, relocation", "🏖": "vacation, rest, beach", "⛅": "weather, cloud, cloud hosting",
-    "🦄": "startup, unicorn, magic", "🛍": "shopping, purchase", "👜": "bag, accessories",
-    "🛒": "e-commerce, cart, orders", "🚂": "train, pipeline, railway", "🛥": "boat, yacht",
-    "🏔": "mountain, big challenge, roadmap", "🏕": "camping, outdoors", "🤖": "bot, AI agent, automation, LLM",
-    "🪩": "party, disco", "🎟": "ticket, event, access pass", "🏴‍☠": "pirate, hacking, red team",
+    "🏁": "finish, completion, done, milestone", "🎬": "video, film, recording, screen capture, demo, action/run", "🎵": "music, song, audio files, notifications sound, ringtone",
+    "🔞": "adult, restricted, age gate, NSFW filter, content moderation", "📚": "learning, books, reference, study", "👑": "admin, owner, leadership",
+    "⚽": "football, sport, team play, competition, league, goal tracking", "🏀": "basketball, sport, bounce, retry, ball-passing, hand-off", "📺": "TV, streaming, display, monitor",
+    "👀": "review, watch, monitoring, observe", "🫦": "flirt, tone of voice, persona style, copywriting, wording", "🍓": "fruit, food, Raspberry Pi, small board computer, seasonal",
+    "💄": "beauty, cosmetics, polish, visual touch-up, branding", "👠": "fashion, shoes, style, e-commerce apparel, dress code", "✈": "travel, flight, migration, moving",
+    "🧳": "trip, packing, relocation, migration of data, moving servers, export/import", "🏖": "vacation, rest, beach, out-of-office, downtime, sleep mode", "⛅": "weather, cloud, cloud hosting",
+    "🦄": "startup, unicorn, magic, rare case, edge case, exotic setup", "🛍": "shopping, purchase", "👜": "bag, accessories, inventory, bundle, kit, dependencies",
+    "🛒": "e-commerce, cart, orders", "🚂": "train, pipeline, railway, CI/CD, sequential jobs, queue", "🛥": "boat, yacht, ship it, deployment, release cruise, premium",
+    "🏔": "mountain, big challenge, roadmap", "🏕": "camping, outdoors, offline mode, minimal setup, field work", "🤖": "bot, AI agent, automation, LLM",
+    "🪩": "party, disco, launch event, celebration, community, social", "🎟": "ticket, event, access pass", "🏴‍☠": "pirate, hacking, red team",
     "🗳": "decision, vote, agreement, choice", "🎓": "education, tutorial, course", "🔭": "research, exploration, long-term",
     "🔬": "deep analysis, inspection, science", "🎶": "music, playlist", "🎤": "singing, speaking, podcast",
-    "🕺": "dance, fun", "💃": "dance, fun", "🪖": "military, defense, hardening, security",
-    "💼": "business, work, plan, strategy", "🧪": "testing, experiment, lab, QA", "👨‍👩‍👧‍👦": "family",
-    "👶": "baby, kids", "🤰": "pregnancy", "💅": "nails, self-care",
+    "🕺": "dance, fun, animation, motion, choreography of steps, workflow", "💃": "dance, fun, presentation, showcase, performance tuning", "🪖": "military, defense, hardening, security",
+    "💼": "business, work, plan, strategy", "🧪": "testing, experiment, lab, QA", "👨‍👩‍👧‍👦": "family, group, team, users, multi-user, roles",
+    "👶": "baby, kids, new project, onboarding, beginner, MVP", "🤰": "pregnancy, incubation, in-progress, expected release, waiting", "💅": "nails, self-care, polish, cosmetic fixes, UI details, finishing",
     "🏛": "government, legal, institution, architecture", "🧮": "calculation, math, accounting, sizing", "🖨": "printing, documents, PDF",
-    "👮‍♂": "police, compliance, enforcement, moderation", "🩺": "health check, diagnostics, doctor", "💊": "medicine, pills",
-    "💉": "injection, vaccine, medical", "🧼": "cleanup, hygiene, refactor, sanitize", "🪪": "identity, auth, credentials, login",
-    "🛃": "access control, permissions, firewall, checkpoint", "🍽": "food, restaurant, recipe", "🐟": "fish, fishing",
-    "🎨": "design, UI, art, theme", "🎭": "roles, personas, theatre", "🎩": "magic trick, elegance",
-    "🔮": "forecast, prediction, future", "🍹": "cocktail, leisure", "🎂": "birthday, anniversary",
-    "☕": "coffee, casual chat, break", "🍣": "sushi, food", "🍔": "burger, food",
-    "🍕": "pizza, food", "🦠": "virus, malware, infection", "💬": "chat, generic conversation",
-    "🎄": "christmas, holidays", "🎃": "halloween, spooky", "✍": "writing, drafting, editing text",
+    "👮‍♂": "police, compliance, enforcement, moderation", "🩺": "health check, diagnostics, doctor", "💊": "medicine, pills, hotfix, patch, dependency update",
+    "💉": "injection, vaccine, medical, dependency injection, immunity, hardening", "🧼": "cleanup, hygiene, refactor, sanitize", "🪪": "identity, auth, credentials, login",
+    "🛃": "access control, permissions, firewall, checkpoint", "🍽": "food, restaurant, recipe, menu, serving, API serving, cookbook", "🐟": "fish, fishing, phishing, lure, catch, scraping",
+    "🎨": "design, UI, art, theme", "🎭": "roles, personas, theatre", "🎩": "magic trick, elegance, formal, white-hat, etiquette",
+    "🔮": "forecast, prediction, future", "🍹": "cocktail, leisure, mix of tools, blend, casual", "🎂": "birthday, anniversary, milestone date, expiry, renewal",
+    "☕": "coffee, casual chat, break", "🍣": "sushi, food, Japan, raw data, slices, chunks", "🍔": "burger, food, hamburger menu, stack, layers",
+    "🍕": "pizza, food, slices, sharding, partition, delivery", "🦠": "virus, malware, infection", "💬": "chat, generic conversation",
+    "🎄": "christmas, holidays, seasonal, tree structure, hierarchy", "🎃": "halloween, spooky, scary bug, haunting issue, ghost process", "✍": "writing, drafting, editing text",
     "⭐": "favourite, starred, rating", "✅": "done, checklist, verification, approval", "🎖": "medal, recognition",
-    "🤡": "joke, absurd, clownery", "🧠": "thinking, model, intelligence, memory", "🦮": "guide, dog, assistance",
-    "🐈": "cat, pet",
+    "🤡": "joke, absurd, clownery, silly mistake, WTF, prank", "🧠": "thinking, model, intelligence, memory", "🦮": "guide, dog, assistance, walkthrough, tutorial, watchdog",
+    "🐈": "cat, pet, cat command, logs viewing, curious, independent",
 }
 
 _ICON_PROMPT_TEMPLATE = (
@@ -105,13 +105,16 @@ _ICON_PROMPT_TEMPLATE = (
     "Emoji rules:\n"
     "- Only catalog emoji are valid; anything else is discarded.\n"
     "- Be specific: match the domain of the topic (auth, backup, network, testing, docs, money, "
-    "voice, decision...), not the fact that it is technical. Generic icons (💻 🤖 💬 📝) are last resorts.\n"
+    "voice, decision...), not the fact that it is technical. Generic icons (💻 🤖 💬 📝 ❗ ❓) are last resorts.\n"
+    "- Spread across the whole catalog: a sidebar full of the same three glyphs is useless. Prefer a "
+    "less obvious icon whose meaning fits over an obvious one that was used recently.\n"
     "- Three DIFFERENT emoji, each a plausible fit on its own.\n"
     "__RECENT__"
     "\nCatalog (emoji: meaning):\n__CATALOG__\n\n"
     'Reply with JSON only: {"name": "...", "emoji": ["first", "second", "third"]}'
 )
-_RECENT_RULE = "- Recently used in this chat (avoid unless clearly the best fit): __RECENT_LIST__\n"
+_RECENT_RULE = ("- These icons were used for recent topics in this chat; do NOT propose them unless nothing else "
+                "in the catalog fits at all: __RECENT_LIST__\n")
 
 _ICON_RESPONSE_FORMAT = {
     "type": "json_schema",
@@ -239,10 +242,12 @@ def clean_short_name(value: Any, *, max_chars: int = NAME_MAX_CHARS, max_words: 
 
 
 def rank_candidates(candidates: Sequence[str], catalog: TopicIconCatalog, recent: Sequence[str] = ()) -> Optional[str]:
-    """First catalog-valid candidate, preferring specific over generic and unseen over recent.
+    """First catalog-valid candidate, preferring unseen over recent and specific over generic.
 
-    Order of preference: specific+fresh > specific+recent > generic+fresh > generic+recent. The
-    model's own ranking breaks ties, so a good first choice is never overridden by a worse one.
+    Order of preference: fresh+specific > fresh+generic > recent+specific > recent+generic. Recency
+    outranks specificity on purpose — a sidebar where every technical topic wears the same three
+    "specific" glyphs is exactly the failure this plugin exists to prevent. The model's own ranking
+    breaks ties, so a good first choice is never overridden by a worse one.
     """
     recent_set = {_normalize_emoji(r) for r in recent}
     best: Optional[tuple] = None
@@ -250,7 +255,7 @@ def rank_candidates(candidates: Sequence[str], catalog: TopicIconCatalog, recent
         emoji = _normalize_emoji(raw)
         if not catalog.lookup(emoji):
             continue
-        score = (emoji in GENERIC_ICONS, emoji in recent_set, position)
+        score = (emoji in recent_set, emoji in GENERIC_ICONS, position)
         if best is None or score < best[0]:
             best = (score, emoji)
     return best[1] if best else None

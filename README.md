@@ -12,10 +12,10 @@ already makes. Names stay clean; only the bubble changes.
 Hermes already makes one cheap auxiliary call per new session — the titler asks the `title_generation` model for `{"title": ...}` from your opening message. This plugin rides that call instead of adding a second one: at load it wraps the titler's `call_llm`, appends the icon catalog and the short-name rules to the system prompt and widens the JSON schema to `{"title", "name", "emoji"}`. The core keeps reading `title` from the same reply; the other two fields wait in a small stash until the gateway renames the topic a moment later. No extra model round-trip, no change to the core.
 
 - **Short name** — 2-4 words, max 28 chars, key noun first, verbs and filler dropped, same language, technical terms exact. Becomes the **topic name only**; the session title Hermes stores (`hermes sessions`, TUI) is untouched. A collapsed Telegram sidebar shows ~12 characters, so "Настроить помощника-покупателя для Авито" reads as "Настроить пом…вито" without it and "Авито-помощник" with it.
-- **Icon** — three ranked catalog candidates; specific beats generic, unseen beats recently used in that chat.
+- **Icon** — Telegram allows only its own ~112 forum-topic stickers, so variety comes from the picker, not the catalog: every sticker carries a broad legend (🍓 Raspberry Pi, 🚂 CI/CD pipeline, 🐟 phishing, 🎃 haunting bug…), the model ranks three candidates, and an icon used in the last 30 topics of that chat loses to any unseen one — even a generic one. 40 real titles → 31 unique icons, no icon above 8%.
 - **Fallback** — the first topic after a gateway restart (catalog not loaded yet), or a core whose titler shape changed, takes a second call for the decor; the title is never at risk.
 
-Point `auxiliary.title_generation` at a fast model (`hermes config set auxiliary.title_generation.provider <p>` / `.model <m>`); by default it is your main model, which is overkill for seven words.
+Point `auxiliary.title_generation` at a fast model (`hermes config set auxiliary.title_generation.provider anthropic` / `.model claude-sonnet-5`); by default it is your main model, which is overkill for seven words. Measured on 40 real titles: claude-sonnet-5 2.2 s, clean Russian, 31 unique icons; gpt-6-sol 3 s; claude-haiku-4-5 2 s but transliterates technical terms.
 
 Live sample (gpt-6-sol, one call each, 2.5-4.6 s):
 

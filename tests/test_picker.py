@@ -49,11 +49,12 @@ def test_aux_failure_is_swallowed():
         assert choose_topic_icon("x", _catalog()) is None
 
 
-def test_rank_prefers_specific_and_unseen():
+def test_rank_prefers_unseen_then_specific():
     c = _catalog()
-    assert rank_candidates(["💻", "🪪", "⚡"], c) == "🪪"
-    assert rank_candidates(["🪪", "⚡", "💻"], c, recent=["🪪"]) == "⚡"
-    assert rank_candidates(["🪪", "💻"], c, recent=["🪪"]) == "🪪"
+    assert rank_candidates(["💻", "🪪", "⚡"], c) == "🪪"                      # specific beats generic
+    assert rank_candidates(["🪪", "⚡", "💻"], c, recent=["🪪"]) == "⚡"      # unseen beats recent
+    assert rank_candidates(["🪪", "💻"], c, recent=["🪪"]) == "💻"           # unseen generic beats recent specific
+    assert rank_candidates(["🪪", "💻"], c, recent=["🪪", "💻"]) == "🪪"     # all recent: model's order
     assert rank_candidates(["🐘", "⚡", "🪪"], c) == "⚡"
     assert rank_candidates(["🐘"], c) is None
 

@@ -48,12 +48,14 @@ _MERGED_RULES = (
     "'Оценить интеграцию computer-use-linux MCP' -> 'MCP computer-use'; "
     "'Hermes gateway degraded after restart' -> 'Gateway degraded'.\n"
     '- "emoji": THREE different catalog emoji that best represent the subject, most specific first. '
-    "Only catalog emoji are valid. Generic icons (💻 🤖 💬 📝) are last resorts.\n"
+    "Only catalog emoji are valid. Generic icons (💻 🤖 💬 📝 ❗ ❓) are last resorts; spread across the whole "
+    "catalog and prefer a less obvious icon whose meaning fits over an obvious one used recently.\n"
     "__RECENT__"
     "\nCatalog (emoji: meaning):\n__CATALOG__\n\n"
     'Reply with JSON only: {"title": "...", "name": "...", "emoji": ["first", "second", "third"]}'
 )
-_RECENT_RULE = "- Recently used icons (avoid unless clearly the best fit): __RECENT_LIST__\n"
+_RECENT_RULE = ("- These icons were used for recent topics; do NOT propose them unless nothing else in the "
+                "catalog fits at all: __RECENT_LIST__\n")
 
 
 def _title_key(title: str) -> str:

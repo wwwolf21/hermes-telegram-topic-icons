@@ -40,7 +40,7 @@ def test_augment_widens_schema_and_prompt_without_touching_the_user_turn():
     schema = out["extra_body"]["response_format"]["json_schema"]["schema"]
     assert set(schema["properties"]) == {"title", "name", "emoji"} and set(schema["required"]) == {"title", "name", "emoji"}
     system = out["messages"][0]["content"]
-    assert system.count("Reply with JSON only") == 1 and "🪪:" in system and "Recently used icons" in system
+    assert system.count("Reply with JSON only") == 1 and "🪪:" in system and "used for recent topics" in system
     assert out["messages"][1] == TITLER_KWARGS["messages"][1]
     assert out["max_tokens"] >= 256
     assert TITLER_KWARGS["max_tokens"] == 64  # deep copy: the core's dict is untouched
