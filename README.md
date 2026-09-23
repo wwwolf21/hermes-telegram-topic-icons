@@ -1,11 +1,17 @@
 # hermes-telegram-topic-icons
 
-Semantic icons for auto-titled Telegram DM topics in [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+Semantic icons and short names for auto-titled Telegram DM topics in [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
 By default a topic in the Telegram sidebar shows the first letter of its name. This plugin picks the
 catalog icon that best matches the generated title — 🛒 for a shopping assistant, 🪪 for an
 auth.log investigation, ⛅ for Cloudflare DNS — in the same `editForumTopic` call the gateway
 already makes. Names stay clean; only the bubble changes.
+
+## Short names
+
+Hermes titles a session in 3-7 words for list views; a collapsed Telegram sidebar shows ~12 characters with an ellipsis in the middle, so "Настроить помощника-покупателя для Авито" reads as "Настроить пом…вито". The same auxiliary call that picks the icon also returns a 2-4 word name (max 28 chars, key noun first, verbs and filler dropped, same language, technical terms exact) which becomes the **topic name only** — the session title Hermes stores (`hermes sessions`, TUI) is untouched.
+
+On 40 real titles: 40/40 shortened, average 20 characters, e.g. `Оценить интеграцию computer-use-linux MCP` → `MCP computer-use`, `Hermes gateway degraded after restart` → `Gateway degraded`, `Анализ auth.log: топ IP по неудачным SSH-входам` → `auth.log SSH-атаки`.
 
 ## Requirements
 

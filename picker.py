@@ -1,4 +1,4 @@
-"""Semantic Telegram forum-topic icon selection (the picker behind the ``pre_topic_rename`` hook).
+"""Semantic Telegram forum-topic icon + short name selection (the picker behind ``pre_topic_rename``).
 
 Telegram forum topics carry an icon drawn from a fixed catalog of ~110 custom-emoji stickers
 (``getForumTopicIconStickers``); arbitrary emoji are rejected. When Hermes auto-titles a topic
@@ -10,6 +10,11 @@ Diversity is the hard part: a bare emoji list makes a small model collapse onto 
 technical title. Three levers keep the sidebar varied: the model sees each icon with a short
 meaning (so 🛃 reads as "access control", not "customs"), it ranks three candidates instead of
 one, and generic / recently-used icons only win when nothing more specific was offered.
+
+The same call also returns a SHORT topic name: Hermes titles sessions in 3-7 words for a list
+view, but Telegram's collapsed sidebar shows ~12 characters with an ellipsis in the middle, so
+"Настроить помощника-покупателя для Авито" reads as "Настроить пом…вито". The picker asks for the
+2-4 word core of the title (same language, nouns first) and enforces the length locally.
 """
 
 from __future__ import annotations
@@ -28,8 +33,11 @@ logger = logging.getLogger(__name__)
 
 # The catalog only changes when Telegram ships new stickers; one refresh per gateway day is plenty.
 CATALOG_TTL_SECONDS = 24 * 3600
-ICON_MAX_TOKENS = 160
+ICON_MAX_TOKENS = 200
 ICON_TIMEOUT_SECONDS = 20.0
+# Telegram sidebar budget: the collapsed list shows ~12 chars, the expanded one ~28 before "…".
+NAME_MAX_CHARS = 28
+NAME_MAX_WORDS = 4
 # How many recent picks the runner remembers per chat to steer the model away from repeats.
 RECENT_WINDOW = 12
 # Variation selectors / ZWJ sequences: the model echoes "⚡" for the catalog's "⚡️"; normalise both sides.
@@ -83,16 +91,25 @@ ICON_MEANINGS: Dict[str, str] = {
 }
 
 _ICON_PROMPT_TEMPLATE = (
-    "You pick an icon for a chat topic. Given the topic title, rank the THREE emoji from the "
-    "catalog that best represent its subject, most specific first.\n\n"
-    "Rules:\n"
+    "You label chat topics for a narrow Telegram sidebar. Given a topic title, return (1) a SHORT "
+    "name and (2) the THREE catalog emoji that best represent its subject, most specific first.\n\n"
+    "Short name rules:\n"
+    "- 2 to 4 words, at most 28 characters. The sidebar shows ~12 characters, so put the key noun FIRST.\n"
+    "- Same language as the title. Keep exact technical terms, product names, filenames, error codes.\n"
+    "- Drop verbs like 'настроить/сделать/проверить/set up/fix' and filler; name the SUBJECT, not the request.\n"
+    "- No trailing punctuation, no quotes, no emoji in the name.\n"
+    "Examples: 'Настроить помощника-покупателя для Авито' -> 'Авито-помощник'; "
+    "'Оценить интеграцию computer-use-linux MCP' -> 'MCP computer-use'; "
+    "'Инструменты исследования и поиска информации' -> 'Поиск и research'; "
+    "'Hermes gateway degraded after restart' -> 'Gateway degraded'.\n\n"
+    "Emoji rules:\n"
     "- Only catalog emoji are valid; anything else is discarded.\n"
     "- Be specific: match the domain of the topic (auth, backup, network, testing, docs, money, "
     "voice, decision...), not the fact that it is technical. Generic icons (💻 🤖 💬 📝) are last resorts.\n"
     "- Three DIFFERENT emoji, each a plausible fit on its own.\n"
     "__RECENT__"
     "\nCatalog (emoji: meaning):\n__CATALOG__\n\n"
-    'Reply with JSON only: {"emoji": ["first", "second", "third"]}'
+    'Reply with JSON only: {"name": "...", "emoji": ["first", "second", "third"]}'
 )
 _RECENT_RULE = "- Recently used in this chat (avoid unless clearly the best fit): __RECENT_LIST__\n"
 
@@ -100,8 +117,8 @@ _ICON_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {"name": "topic_icon", "strict": True, "schema": {
         "type": "object",
-        "properties": {"emoji": {"type": "array", "items": {"type": "string"}}},
-        "required": ["emoji"], "additionalProperties": False}},
+        "properties": {"name": {"type": "string"}, "emoji": {"type": "array", "items": {"type": "string"}}},
+        "required": ["name", "emoji"], "additionalProperties": False}},
 }
 
 
@@ -176,8 +193,7 @@ class RecentIcons:
             self._rings.setdefault(key, deque(maxlen=self._window)).append(_normalize_emoji(emoji))
 
 
-def _extract_candidates(raw: str) -> List[str]:
-    """Ranked emoji list from a ``{"emoji": [...]}`` payload (or a bare string), tolerant of fences."""
+def _parse_payload(raw: str) -> Dict[str, Any]:
     text = (raw or "").strip()
     fenced = re.search(r"\{.*\}", text, re.DOTALL)
     if fenced:
@@ -185,11 +201,41 @@ def _extract_candidates(raw: str) -> List[str]:
     try:
         parsed = json.loads(text)
     except (ValueError, TypeError):
-        return []
-    value = parsed.get("emoji") if isinstance(parsed, dict) else None
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _extract_candidates(raw: str) -> List[str]:
+    """Ranked emoji list from a ``{"emoji": [...]}`` payload (or a bare string), tolerant of fences."""
+    value = _parse_payload(raw).get("emoji")
     if isinstance(value, str):
         return [value]
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
+_NAME_TRIM_RE = re.compile(r"^[\s\"'«»„“”‘’.,;:!?\-–—]+|[\s\"'«»„“”‘’.,;:!?\-–—]+$")
+
+
+def clean_short_name(value: Any, *, max_chars: int = NAME_MAX_CHARS, max_words: int = NAME_MAX_WORDS) -> Optional[str]:
+    """Model-proposed short name fitted to the sidebar budget, or None when unusable.
+
+    Trims wrappers/punctuation, strips emoji, then cuts by WORDS (never mid-word) until it fits
+    ``max_words`` and ``max_chars``. A single word longer than ``max_chars`` is rejected rather than
+    truncated — a chopped identifier is worse than the long title.
+    """
+    if not isinstance(value, str):
+        return None
+    text = _EMOJI_NOISE_RE.sub("", value)
+    text = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF]", "", text)
+    text = _NAME_TRIM_RE.sub("", " ".join(text.split()))
+    words = text.split()
+    if not words:
+        return None
+    words = words[:max_words]
+    while words and len(" ".join(words)) > max_chars:
+        words.pop()
+    name = _NAME_TRIM_RE.sub("", " ".join(words))
+    return name or None
 
 
 def rank_candidates(candidates: Sequence[str], catalog: TopicIconCatalog, recent: Sequence[str] = ()) -> Optional[str]:
@@ -210,16 +256,17 @@ def rank_candidates(candidates: Sequence[str], catalog: TopicIconCatalog, recent
     return best[1] if best else None
 
 
-def choose_topic_icon(
+def choose_topic_decor(
     title: str, catalog: TopicIconCatalog, *, recent: Sequence[str] = (), timeout: float = ICON_TIMEOUT_SECONDS,
-) -> Optional[str]:
-    """Catalog emoji best matching ``title`` (normalised), or None on any miss or failure.
+) -> tuple:
+    """``(emoji, short_name)`` for ``title`` — either may be None; both None on failure.
 
-    Synchronous (one aux call) — callers run it off-loop via ``asyncio.to_thread`` and map the
-    emoji to its ``custom_emoji_id`` through ``catalog.lookup``.
+    One aux call (synchronous — callers run it off-loop via ``asyncio.to_thread``). The emoji is
+    normalised and catalog-valid; map it to ``custom_emoji_id`` through ``catalog.lookup``. The
+    short name is already fitted to ``NAME_MAX_CHARS``/``NAME_MAX_WORDS``.
     """
     if not title or not catalog.emojis:
-        return None
+        return None, None
     recent_rule = _RECENT_RULE.replace("__RECENT_LIST__", " ".join(recent)) if recent else ""
     prompt = (_ICON_PROMPT_TEMPLATE
               .replace("__RECENT__", recent_rule)
@@ -232,11 +279,20 @@ def choose_topic_icon(
             extra_body={"response_format": _ICON_RESPONSE_FORMAT},
             reasoning_config={"enabled": False},
         )
-        candidates = _extract_candidates(response.choices[0].message.content or "")
+        raw = response.choices[0].message.content or ""
     except Exception as e:
-        logger.debug("Topic icon selection failed: %s", e, exc_info=True)
-        return None
+        logger.debug("Topic decor selection failed: %s", e, exc_info=True)
+        return None, None
+    payload = _parse_payload(raw)
+    candidates = _extract_candidates(raw)
     emoji = rank_candidates(candidates, catalog, recent)
     if emoji is None:
         logger.debug("Topic icon candidates %r not in catalog; leaving icon unset", candidates)
-    return emoji
+    return emoji, clean_short_name(payload.get("name"))
+
+
+def choose_topic_icon(
+    title: str, catalog: TopicIconCatalog, *, recent: Sequence[str] = (), timeout: float = ICON_TIMEOUT_SECONDS,
+) -> Optional[str]:
+    """Catalog emoji best matching ``title``, or None (icon half of :func:`choose_topic_decor`)."""
+    return choose_topic_decor(title, catalog, recent=recent, timeout=timeout)[0]

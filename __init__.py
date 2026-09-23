@@ -26,7 +26,7 @@ from typing import Any, Optional
 
 # Plugin directories are loaded as loose modules, not packages: import the sibling by path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from picker import RecentIcons, TopicIconCatalog, choose_topic_icon  # noqa: E402
+from picker import RecentIcons, TopicIconCatalog, choose_topic_decor  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +38,21 @@ _catalog = TopicIconCatalog()
 _recent = RecentIcons()
 
 
-async def pick_icon_id(chat_id: str, title: str, fetch_icon_catalog: Any) -> Optional[str]:
-    """``custom_emoji_id`` for ``title`` or None; shared by the hook and the shim."""
+async def pick_decor(chat_id: str, title: str, fetch_icon_catalog: Any) -> tuple:
+    """``(custom_emoji_id, short_name)`` for ``title`` — either None; shared by the hook and the shim."""
     if fetch_icon_catalog is None or not await _catalog.ensure_loaded(fetch_icon_catalog):
-        return None
-    emoji = await asyncio.to_thread(choose_topic_icon, title, _catalog, recent=_recent.get(str(chat_id)))
-    if not emoji:
-        return None
-    _recent.push(str(chat_id), emoji)
-    logger.info("Topic icon %s for '%s'", emoji, title)
-    return _catalog.lookup(emoji)
+        return None, None
+    emoji, name = await asyncio.to_thread(choose_topic_decor, title, _catalog, recent=_recent.get(str(chat_id)))
+    if emoji:
+        _recent.push(str(chat_id), emoji)
+    if name and name.casefold() == title.casefold():
+        name = None
+    logger.info("Topic decor %s '%s' for '%s'", emoji or "∅", name or title, title)
+    return (_catalog.lookup(emoji) if emoji else None), name
+
+
+async def pick_icon_id(chat_id: str, title: str, fetch_icon_catalog: Any) -> Optional[str]:
+    return (await pick_decor(chat_id, title, fetch_icon_catalog))[0]
 
 
 # ── 1. hook path ────────────────────────────────────────────────────────────────────────────
@@ -57,8 +62,13 @@ async def pre_topic_rename(
 ) -> Optional[dict]:
     if platform != "telegram":
         return None
-    icon = await pick_icon_id(chat_id, title, fetch_icon_catalog)
-    return {"icon_custom_emoji_id": icon} if icon else None
+    icon, name = await pick_decor(chat_id, title, fetch_icon_catalog)
+    result = {}
+    if icon:
+        result["icon_custom_emoji_id"] = icon
+    if name:
+        result["name"] = name
+    return result or None
 
 
 # ── 2. shim path (stock core) ───────────────────────────────────────────────────────────────
@@ -70,22 +80,23 @@ def _shim_rename(original):
         bot = getattr(self, "_bot", None)
         if args or kwargs or bot is None:  # a signature we do not know: stay out of the way
             return await original(self, chat_id, thread_id, name, *args, **kwargs)
-        icon = None
+        icon, short = None, None
         try:
-            icon = await pick_icon_id(chat_id, name, lambda: bot.get_forum_topic_icon_stickers())
+            icon, short = await pick_decor(chat_id, name, lambda: bot.get_forum_topic_icon_stickers())
         except Exception:
-            logger.debug("Topic icon pick failed; plain rename", exc_info=True)
-        if not icon:
+            logger.debug("Topic decor pick failed; plain rename", exc_info=True)
+        if not icon and not short:
             return await original(self, chat_id, thread_id, name)
         try:
             chat_id_arg = int(chat_id)
         except (TypeError, ValueError):
             chat_id_arg = chat_id
+        kwargs = {"icon_custom_emoji_id": icon} if icon else {}
         await bot.edit_forum_topic(
-            chat_id=chat_id_arg, message_thread_id=int(thread_id), name=name, icon_custom_emoji_id=icon,
+            chat_id=chat_id_arg, message_thread_id=int(thread_id), name=short or name, **kwargs,
         )
-        logger.info("[%s] Renamed DM topic in chat %s thread_id=%s -> '%s' with icon",
-                    getattr(self, "name", "Telegram"), chat_id, thread_id, name)
+        logger.info("[Telegram] Renamed DM topic in chat %s thread_id=%s -> '%s'%s",
+                    chat_id, thread_id, short or name, " with icon" if icon else "")
     rename_dm_topic.__dict__[_SHIM_MARK] = True
     return rename_dm_topic
 

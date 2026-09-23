@@ -1,4 +1,5 @@
-"""Picker contracts: catalog-only answers, specific > generic, unseen > recent, failures swallowed."""
+"""Picker contracts: catalog-only answers, specific > generic, unseen > recent, sidebar-length
+names cut by words never mid-word, failures swallowed."""
 
 import os
 import sys
@@ -9,7 +10,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import picker  # noqa: E402
-from picker import RecentIcons, TopicIconCatalog, choose_topic_icon, rank_candidates  # noqa: E402
+from picker import (  # noqa: E402
+    NAME_MAX_CHARS, RecentIcons, TopicIconCatalog, choose_topic_decor, choose_topic_icon, clean_short_name,
+    rank_candidates,
+)
 
 CATALOG = [
     {"emoji": "💻", "custom_emoji_id": "1"},
@@ -64,6 +68,28 @@ def test_recent_ring_is_per_key_and_bounded():
     assert r.get("c") == []
 
 
+def test_short_name_fits_sidebar_by_words_never_mid_word():
+    assert clean_short_name('  "Авито-помощник". ') == "Авито-помощник"
+    assert clean_short_name("🛒 Авито помощник ✅") == "Авито помощник"
+    assert clean_short_name("one two three four five six") == "one two three four"
+    long = "Настройка маршрутизации split-tunnel через sing-box"
+    cut = clean_short_name(long)
+    assert len(cut) <= NAME_MAX_CHARS and long.startswith(cut) and not long[len(cut)].isalnum()
+    assert clean_short_name("x" * (NAME_MAX_CHARS + 1)) is None  # never truncate an identifier
+    assert clean_short_name("") is None and clean_short_name(None) is None and clean_short_name("...") is None
+
+
+def test_decor_returns_name_and_icon_together_and_degrades_per_field():
+    with patch.object(picker, "call_llm", return_value=_reply('{"name": "SSH audit", "emoji": ["🪪"]}')):
+        assert choose_topic_decor("Analyse SSH login failures in auth.log", _catalog()) == ("🪪", "SSH audit")
+    with patch.object(picker, "call_llm", return_value=_reply('{"name": "SSH audit", "emoji": ["🐉"]}')):
+        assert choose_topic_decor("x", _catalog()) == (None, "SSH audit")
+    with patch.object(picker, "call_llm", return_value=_reply('{"emoji": ["🪪"]}')):
+        assert choose_topic_decor("x", _catalog()) == ("🪪", None)
+    with patch.object(picker, "call_llm", side_effect=RuntimeError("aux down")):
+        assert choose_topic_decor("x", _catalog()) == (None, None)
+
+
 def _load_plugin():
     import importlib.util
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,11 +114,11 @@ async def test_hook_returns_catalog_id_and_feeds_recency():
     async def fetch():
         return CATALOG
 
-    with patch.object(picker, "call_llm", return_value=_reply('{"emoji": ["🪪", "⚡"]}')):
+    with patch.object(picker, "call_llm", return_value=_reply('{"name": "SSH", "emoji": ["🪪", "⚡"]}')):
         first = await plugin.pre_topic_rename(platform="telegram", chat_id="c", title="SSH", fetch_icon_catalog=fetch)
         second = await plugin.pre_topic_rename(platform="telegram", chat_id="c", title="SSH #2", fetch_icon_catalog=fetch)
-    assert first == {"icon_custom_emoji_id": "4"}
-    assert second == {"icon_custom_emoji_id": "2"}
+    assert first == {"icon_custom_emoji_id": "4"}  # name identical to the title is not an override
+    assert second == {"icon_custom_emoji_id": "2", "name": "SSH"}
     assert await plugin.pre_topic_rename(platform="discord", chat_id="c", title="x", fetch_icon_catalog=fetch) is None
 
 
@@ -127,11 +153,11 @@ async def test_shim_adds_icon_to_stock_rename_and_steps_aside_on_unknown_signatu
         assert plugin.install_shim() is True
         assert plugin.install_shim() is True  # idempotent
     adapter = Adapter()
-    with patch.object(picker, "call_llm", return_value=_reply('{"emoji": ["🪪"]}')):
-        await adapter.rename_dm_topic("7", "42", "SSH failures")
+    with patch.object(picker, "call_llm", return_value=_reply('{"name": "SSH audit", "emoji": ["🪪"]}')):
+        await adapter.rename_dm_topic("7", "42", "Analyse SSH login failures")
     with patch.object(picker, "call_llm", side_effect=RuntimeError("aux down")):
         await adapter.rename_dm_topic("7", "43", "Anything")
-    assert calls[0] == {"chat_id": 7, "message_thread_id": 42, "name": "SSH failures", "icon_custom_emoji_id": "4"}
+    assert calls[0] == {"chat_id": 7, "message_thread_id": 42, "name": "SSH audit", "icon_custom_emoji_id": "4"}
     assert calls[1] == {"chat_id": 7, "message_thread_id": 43, "name": "Anything"}
 
     class Changed:
