@@ -171,8 +171,8 @@ class TopicIconCatalog:
             return True
         try:
             self.load(await fetch())
-        except Exception:
-            logger.debug("Forum topic icon catalog refresh failed", exc_info=True)
+        except Exception as exc:
+            logger.warning("Forum topic icon catalog refresh failed: %s", exc)
         return bool(self._by_emoji)
 
     def legend(self) -> str:

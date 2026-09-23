@@ -2,8 +2,10 @@
 
 One auxiliary call per topic: the core titler's request is widened (``merged_titler``) so the same
 reply carries ``title``, ``name`` and ``emoji``; the rename hook then answers from a stash without
-a second model round-trip. The stash misses only when the icon catalog was not loaded yet (first
-topic after a restart) — that topic takes the two-call path and warms the catalog.
+a second model round-trip. The stash misses when the icon catalog was not loaded yet (first topic after a restart); that
+topic takes the two-call path and warms the catalog. This plugin is loaded before the runtime
+Telegram adapter in many gateway configurations: the stock-core shim rechecks the runtime class
+at the first session boundary instead of trusting the source-tree class patched at discovery.
 
 Two ways into the rename, picked at load time:
 
@@ -136,20 +138,26 @@ def _adapter_class():
 
 
 def install_shim() -> bool:
-    """Wrap ``TelegramAdapter.rename_dm_topic`` once. True when installed (or already present)."""
-    cls = _adapter_class()
-    original = getattr(cls, "rename_dm_topic", None) if cls else None
-    if original is None:
-        return False
-    if getattr(original, _SHIM_MARK, False):
-        return True
-    params = list(inspect.signature(original).parameters)
-    if params[:4] != ["self", "chat_id", "thread_id", "name"]:
-        logger.warning("TelegramAdapter.rename_dm_topic signature changed (%s); topic icons disabled", params)
-        return False
-    cls.rename_dm_topic = _shim_rename(original)
-    logger.info("Topic icons: shimmed TelegramAdapter.rename_dm_topic (core has no %s hook)", HOOK)
-    return True
+    """Wrap every loaded Telegram adapter class, including late-loaded runtime namespaces."""
+    installed = False
+    classes = [_adapter_class()]
+    classes.extend(getattr(sys.modules.get(mod_name), "TelegramAdapter", None)
+                   for mod_name in _ADAPTER_MODULES)
+    for cls in classes:
+        original = getattr(cls, "rename_dm_topic", None) if cls else None
+        if original is None:
+            continue
+        if getattr(original, _SHIM_MARK, False):
+            installed = True
+            continue
+        params = list(inspect.signature(original).parameters)
+        if params[:4] != ["self", "chat_id", "thread_id", "name"]:
+            logger.warning("TelegramAdapter.rename_dm_topic signature changed (%s); topic icons disabled", params)
+            continue
+        cls.rename_dm_topic = _shim_rename(original)
+        logger.info("Topic icons: shimmed %s.TelegramAdapter.rename_dm_topic", cls.__module__)
+        installed = True
+    return installed
 
 
 def core_has_hook() -> bool:
@@ -167,6 +175,7 @@ def register(ctx) -> None:
     if core_has_hook():
         ctx.register_hook(HOOK, pre_topic_rename)
         return
-    if not install_shim():
-        # The adapter module may not be imported yet at plugin-load time; retry on session start.
-        ctx.register_hook("on_session_start", lambda **_: install_shim())
+    # Platform plugins load under a separate runtime namespace, often AFTER this plugin. Even if
+    # the source-tree class was patched during discovery, re-check at the first session boundary.
+    install_shim()
+    ctx.register_hook("on_session_start", lambda **_: install_shim())

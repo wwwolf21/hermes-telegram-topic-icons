@@ -3,6 +3,7 @@ names cut by words never mid-word, failures swallowed."""
 
 import os
 import sys
+import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -27,6 +28,20 @@ def _catalog():
     c = TopicIconCatalog()
     c.load(CATALOG)
     return c
+
+
+@pytest.mark.asyncio
+async def test_catalog_fetch_failure_warns_and_preserves_previous_catalog(caplog):
+    c = _catalog()
+    c._loaded_at = float("-inf")
+
+    async def failed():
+        raise TimeoutError("Telegram API timeout")
+
+    with caplog.at_level(logging.WARNING, logger="picker"):
+        assert await c.ensure_loaded(failed) is True
+    assert c.lookup("🪪") == "4"
+    assert "Forum topic icon catalog refresh failed" in caplog.text
 
 
 def _reply(content):
