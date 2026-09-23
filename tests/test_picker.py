@@ -64,13 +64,26 @@ def test_recent_ring_is_per_key_and_bounded():
     assert r.get("c") == []
 
 
-@pytest.mark.asyncio
-async def test_hook_returns_catalog_id_and_feeds_recency():
+def _load_plugin():
     import importlib.util
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     spec = importlib.util.spec_from_file_location("topic_icons_plugin", os.path.join(root, "__init__.py"))
     plugin = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plugin)
+    return plugin
+
+
+class _Ctx:
+    def __init__(self):
+        self.hooks = {}
+
+    def register_hook(self, name, cb):
+        self.hooks[name] = cb
+
+
+@pytest.mark.asyncio
+async def test_hook_returns_catalog_id_and_feeds_recency():
+    plugin = _load_plugin()
 
     async def fetch():
         return CATALOG
@@ -81,3 +94,49 @@ async def test_hook_returns_catalog_id_and_feeds_recency():
     assert first == {"icon_custom_emoji_id": "4"}
     assert second == {"icon_custom_emoji_id": "2"}
     assert await plugin.pre_topic_rename(platform="discord", chat_id="c", title="x", fetch_icon_catalog=fetch) is None
+
+
+def test_register_prefers_hook_when_core_has_it():
+    plugin = _load_plugin()
+    with patch.object(plugin, "core_has_hook", return_value=True), patch.object(plugin, "install_shim") as shim:
+        ctx = _Ctx()
+        plugin.register(ctx)
+    assert list(ctx.hooks) == ["pre_topic_rename"]
+    shim.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_shim_adds_icon_to_stock_rename_and_steps_aside_on_unknown_signature():
+    plugin = _load_plugin()
+    calls = []
+
+    class Bot:
+        async def get_forum_topic_icon_stickers(self):
+            return CATALOG
+
+        async def edit_forum_topic(self, **kw):
+            calls.append(kw)
+
+    class Adapter:
+        _bot = Bot()
+
+        async def rename_dm_topic(self, chat_id, thread_id, name):
+            await self._bot.edit_forum_topic(chat_id=int(chat_id), message_thread_id=int(thread_id), name=name)
+
+    with patch.object(plugin, "_adapter_class", return_value=Adapter):
+        assert plugin.install_shim() is True
+        assert plugin.install_shim() is True  # idempotent
+    adapter = Adapter()
+    with patch.object(picker, "call_llm", return_value=_reply('{"emoji": ["🪪"]}')):
+        await adapter.rename_dm_topic("7", "42", "SSH failures")
+    with patch.object(picker, "call_llm", side_effect=RuntimeError("aux down")):
+        await adapter.rename_dm_topic("7", "43", "Anything")
+    assert calls[0] == {"chat_id": 7, "message_thread_id": 42, "name": "SSH failures", "icon_custom_emoji_id": "4"}
+    assert calls[1] == {"chat_id": 7, "message_thread_id": 43, "name": "Anything"}
+
+    class Changed:
+        async def rename_dm_topic(self, chat_id, topic, name):  # renamed positional: refuse to wrap
+            pass
+
+    with patch.object(plugin, "_adapter_class", return_value=Changed):
+        assert plugin.install_shim() is False

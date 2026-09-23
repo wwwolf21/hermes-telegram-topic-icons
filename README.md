@@ -9,7 +9,13 @@ already makes. Names stay clean; only the bubble changes.
 
 ## Requirements
 
-- Hermes Agent with the `pre_topic_rename` gateway hook (PR NousResearch/hermes-agent#119907).
+- Any current Hermes Agent. The plugin has two ways in and picks one at load time:
+  - **Hook** — cores with the `pre_topic_rename` gateway hook (NousResearch/hermes-agent#119907)
+    call the plugin with the title; its answer rides the same `editForumTopic` as the rename.
+  - **Shim** — stock cores get `TelegramAdapter.rename_dm_topic` wrapped once, at load, with a
+    version that passes `icon_custom_emoji_id` to the same Bot API call. The wrapper adds one
+    kwarg and nothing else; if upstream ever changes that method's signature the shim refuses to
+    install (logged) and topics rename as before, just without icons.
 - Telegram [Threaded Mode](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/telegram#threaded-mode-dm-topics) (DM topics) enabled for your bot.
 - An auxiliary model configured (the plugin rides the `title_generation` tier — same model that
   titles the topic).
